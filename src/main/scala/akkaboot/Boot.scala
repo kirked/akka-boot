@@ -66,10 +66,9 @@ class Boot(args: Array[String], bootConfig: Config)
       skipped = skipped + 1
       checkDone
 
-    case options @ ActorOptions(name, generator, _, _, _, true) =>
+    case options @ ActorOptions(name, generator, config, _, configAsMessage, true) =>
       log.info("{} starting", name)
-      generator(context.system, options)
-      log.debug("{} started", name)
+      startActor(options)
       started = started + 1
       checkDone
     
@@ -95,6 +94,25 @@ class Boot(args: Array[String], bootConfig: Config)
     abort
   }
 
+
+  def startActor(actorOptions: ActorOptions): Unit = {
+    actorOptions.generator(context.system, actorOptions) match {
+      case Success(actor) =>
+        log.debug("{} started", actorOptions.name)
+        (actorOptions.configAsMessage, actorOptions.configuration) match {
+          case (false, _)           => ()
+          case (true, Some(config)) => actor ! config
+          case (true, None) =>
+            log.warning("no actor configuration for {} when config-as-message is true", actorOptions.name)
+            log.warning("+- sending empty configuration to {}", actor)
+            actor ! ConfigFactory.empty
+        }
+
+        case Failure(err) =>
+          log.error(err, "startup of {} failed", actorOptions.name)
+          if (abortOnFailure) abort
+    }
+  }
 
   def checkDone(): Unit = if (started + skipped >= actors.size) {
     startupComplete("complete")
@@ -177,7 +195,8 @@ class Boot(args: Array[String], bootConfig: Config)
             case (true, Some(config)) => Props(clazz, config)
             
             case (true, None) =>
-              log.warning("using empty configuration for {}", actorOptions.name)
+              log.warning("no actor configuration for {} when config-as-param is true", actorOptions.name)
+              log.warning("+- providing empty configuration")
               Props(clazz, ConfigFactory.empty)
           }
           factory.actorOf(props, name = actorOptions.name)
