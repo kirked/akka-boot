@@ -1,5 +1,7 @@
 
-name := "akkaboot"
+name := "akka-boot"
+
+organization := "com.github.kirked"
 
 version := "0.9.0"
 
