@@ -31,7 +31,6 @@ import akka.actor.{Actor,
                    ExtendedActorSystem,
                    Props}
 import com.typesafe.config.{Config, ConfigFactory}
-import java.lang.reflect.Modifier
 import java.net.URI
 import scala.util.{Try, Success, Failure}
 
@@ -213,7 +212,7 @@ class Boot(args: Array[String], bootConfig: Config)
 
   /** Parse an actor factory specification: "factory:fqcn/method" */
   final object FactoryGenerator {
-    import java.lang.reflect.Method
+    import java.lang.reflect.{Method, Modifier}
 
       // parse URI format "factory:fqcn/method"
     def unapply(uri: URI): Option[ActorGenerator] = uri.getScheme match {
