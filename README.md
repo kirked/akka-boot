@@ -15,6 +15,8 @@ To use akka-boot, supply an additional top-level configuration object named `boo
 >
 > **abort-on-failure** _(optional)_ - A Boolean indicating whether or not to abort startup on failures. _(default **true**)_
 
+The `boot` configuration will not be provided to the actor system.
+
 #### Actor Configuration
 
 See `src/test/resources/application.conf` for small examples of configurations. 
@@ -36,8 +38,6 @@ Each actor configuration is a configuration object with the following values:
 
 The actor configuration is opaque to akka-boot, so any values may be placed inside.
 This allows multiple instances of the same actor class to be provisioned differently.
-
-The `boot` configuration will not be provided to the actor system.
 
 ### Use
 
