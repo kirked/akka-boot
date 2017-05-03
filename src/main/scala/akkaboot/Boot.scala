@@ -225,52 +225,59 @@ class Boot(args: Array[String], bootConfig: Config)
         else {
           val Array(fqcn, methodName) = uri.getSchemeSpecificPart.split('/')
           reflector.getObjectFor[AnyRef](fqcn) match {
-            case Success(scalaObject) =>
-              Try(scalaObject.getClass.getMethod(methodName)) map {
-                _.invoke(scalaObject)
-              } match {
-                case Success(f: Function2[_, _, _]) =>
-                  Success(f.asInstanceOf[ActorGenerator])
-
-                case Success(unexpected) =>
-                  val err = new IllegalStateException(s"expected a Function2 but got a ${unexpected.getClass.getName}")
-                  log.error(err.getMessage)
-                  Failure(err)
-
-                case Failure(err) =>
-                  log.error(err, "couldn't find Scala object method [{}] for URI [{}]", methodName, uri)
-                  Failure(err)
-              }
-
-            case Failure(err) =>
-              reflector.getClassFor[AnyRef](fqcn) match {
-                case Success(clazz) =>
-                  Try(clazz.getMethod(methodName, classOf[ActorRefFactory], classOf[ActorOptions])) match {
-                    case Success(method) =>
-                      val mods = method.getModifiers
-                      if (Modifier.isStatic(mods) && Modifier.isPublic(mods)) {
-                        Success(genStatic(method))
-                      }
-                      else {
-                        val err = new IllegalStateException(s"couldn't find Java public static method $methodName for URI [$uri]")
-                        log.error(err.getMessage)
-                        Failure(err)
-                      }
-
-                    case Failure(_) =>
-                      log.error("couldn't find method {} for URI [{}]; tried Scala Object and Java static",
-                          methodName, uri)
-                      Failure(err)
-                  }
-
-                case Failure(err) =>
-                  log.error(err, "couldn't load class {} for URI [{}]", fqcn, uri)
-                  Failure(err)
-              }
+            case Success(scalaObject) => scalaGenerator(scalaObject, fqcn, methodName, uri)
+            case Failure(err)         => javaGenerator(fqcn, methodName, uri)
           }
         }.toOption
 
       case _ => None
+    }
+
+
+    private def scalaGenerator(scalaObject: AnyRef, fqcn: String, methodName: String, uri: URI): Try[ActorGenerator] = {
+      Try(scalaObject.getClass.getMethod(methodName)) map {
+        _.invoke(scalaObject)
+      } match {
+        case Success(f: Function2[_, _, _]) =>
+          Success(f.asInstanceOf[ActorGenerator])
+
+        case Success(unexpected) =>
+          val err = new IllegalStateException(s"$fqcn.$methodName should return an ActorGenerator for URI [$uri]")
+          log.error(err.getMessage)
+          Failure(err)
+
+        case Failure(err) =>
+          log.error(err, "couldn't find Scala object method [{}] for URI [{}]", methodName, uri)
+          Failure(err)
+      }
+    }
+
+
+    private def javaGenerator(fqcn: String, methodName: String, uri: URI): Try[ActorGenerator] = {
+      reflector.getClassFor[AnyRef](fqcn) match {
+        case Success(clazz) =>
+          Try(clazz.getMethod(methodName, classOf[ActorRefFactory], classOf[ActorOptions])) match {
+            case Success(method) =>
+              val mods = method.getModifiers
+              if (Modifier.isStatic(mods) && Modifier.isPublic(mods)) {
+                Success(genStatic(method))
+              }
+              else {
+                val err = new IllegalStateException(s"couldn't find Java public static method $methodName for URI [$uri]")
+                log.error(err.getMessage)
+                Failure(err)
+              }
+
+            case Failure(err) =>
+              log.error("couldn't find method {} for URI [{}]; tried Scala object and Java static",
+                  methodName, uri)
+              Failure(err)
+          }
+
+        case Failure(err) =>
+          log.error(err, "couldn't load class {} for URI [{}]", fqcn, uri)
+          Failure(err)
+      }
     }
 
 
