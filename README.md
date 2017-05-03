@@ -1,7 +1,8 @@
 akka-boot is a small, focused library to startup an actor system
 and top-level actors using only configuration.
 
-There are no dependencies other than Akka.
+There are no dependencies other than Akka. Scala object factory and Java static factory method
+implementations are supported.
 
 ### Configuration
 
@@ -13,6 +14,9 @@ To use akka-boot, supply an additional top-level configuration object named `boo
 >
 > **abort-on-failure** _(optional)_ - A Boolean indicating whether or not to abort startup on failures. _(default **true**)_
 
+#### Actor Configuration
+
+See `src/test/resources/application.conf` for small examples of configurations. 
 Each actor configuration is a configuration object with the following values:
 
 > **name** _(required)_ - The name for the top-level actor.
