@@ -36,7 +36,7 @@ Each actor configuration is a configuration object with the following values:
 >
 > **config-as-message** _(optional)_ - A Boolean indicating that the actor configuration should be provided as a message. _(default **false**)_
 
-The actor configuration is opaque to akka-boot, so any values may be placed inside.
+The `config` element of the actor configuration is opaque to akka-boot, so any values may be placed inside.
 This allows multiple instances of the same actor class to be provisioned differently.
 
 ### Use
