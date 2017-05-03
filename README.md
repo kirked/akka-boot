@@ -1,8 +1,9 @@
 akka-boot is a small, focused library to startup an actor system
 and top-level actors using only configuration.
 
-There are no dependencies other than Akka. Scala object factory and Java static factory method
-implementations are supported.
+There are no dependencies other than Akka.
+
+Scala object factory and Java static factory method implementations are supported.
 
 ### Configuration
 
