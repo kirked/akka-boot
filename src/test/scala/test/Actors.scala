@@ -2,7 +2,7 @@ package test
 
 import akka.actor.{Actor, ActorLogging, Props}
 import akkaboot.ConfigHelp
-import akkaboot.Boot._
+import akkaboot.Boot.ActorGenerator
 import com.typesafe.config.Config
 import scala.util.Try
 
