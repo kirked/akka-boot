@@ -45,6 +45,14 @@ Simply use `akkaboot.Main` as your program's main entry point.
 
 Until the actor system is started, any problems will be reported to standard error. Once the actor system is started, Akka logging is used to provide information & diagnostics.
 
+### Testing
+
+To run the tests, from sbt issue the following command:
+
+    test:run -Dconfig.file=./src/test/resources/application.conf
+
+All configured actors should start with no problems. Control-C to stop.
+
 ### License
 
 MIT.
