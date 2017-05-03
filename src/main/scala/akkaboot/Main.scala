@@ -54,7 +54,7 @@ object Main extends App with ConfigHelp {
       val system = ActorSystem(name, config.withoutPath("boot"))
 
       if (bootConfig.booleanWithDefault("exit-on-termination", true)) {
-        system.registerOnTermination {
+        system.registerOnTermination[Unit] {
           sys.exit(0)
         }
       }

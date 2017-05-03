@@ -31,6 +31,7 @@ import akka.actor.{Actor,
                    ExtendedActorSystem,
                    Props}
 import com.typesafe.config.{Config, ConfigFactory}
+import java.lang.reflect.Modifier
 import java.net.URI
 import scala.util.{Try, Success, Failure}
 
@@ -56,6 +57,7 @@ class Boot(args: Array[String], bootConfig: Config)
 
     var started = 0
     var skipped = 0
+    var aborted = false
 
 
   def receive = {
@@ -64,10 +66,13 @@ class Boot(args: Array[String], bootConfig: Config)
       skipped = skipped + 1
       checkDone
 
-    case options @ ActorOptions(name, generator, config, _, configAsMessage, true) =>
-      log.info("{} starting", name)
-      startActor(options)
-      started = started + 1
+    case options @ ActorOptions(name, _, _, _, _, true) =>
+      if (aborted) skipped = skipped + 1
+      else {
+        log.info("{} starting", name)
+        startActor(options)
+        started = started + 1
+      }
       checkDone
     
     case InvalidConfig(config, msg, err) =>
@@ -97,28 +102,29 @@ class Boot(args: Array[String], bootConfig: Config)
     actorOptions.generator(context.system, actorOptions) match {
       case Success(actor) =>
         log.debug("{} started", actorOptions.name)
-        (actorOptions.configAsMessage, actorOptions.configuration) match {
-          case (false, _)           => ()
-          case (true, Some(config)) => actor ! config
-          case (true, None) =>
-            log.warning("no actor configuration for {} when config-as-message is true", actorOptions.name)
+        if (actorOptions.configAsMessage) {
+          if (actorOptions.configuration.isEmpty) {
+            log.warning("empty actor configuration for {} when config-as-message is true", actorOptions.name)
             log.warning("+- sending empty configuration to {}", actor)
-            actor ! ConfigFactory.empty
+          }
+          actor ! actorOptions.configuration
         }
 
-        case Failure(err) =>
-          log.error(err, "startup of {} failed", actorOptions.name)
-          if (abortOnFailure) abort
+      case Failure(err) =>
+        log.error(err, "startup of {} failed", actorOptions.name)
+        if (abortOnFailure) abort
     }
   }
 
+
   def checkDone(): Unit = if (started + skipped >= actors.size) {
-    startupComplete("complete")
+    if (!aborted) startupComplete("complete")
     context stop self
   }
 
 
   def abort(): Unit = {
+    aborted = true
     startupComplete("ABORTING")
     context.system.terminate
   }
@@ -126,7 +132,7 @@ class Boot(args: Array[String], bootConfig: Config)
 
   def startupBanner(): Unit = {
     log.info("=================================================================")
-    log.info("initialising {}", context.system.name)
+    log.info("initialising actor system {}", context.system.name)
   }
 
 
@@ -140,7 +146,7 @@ class Boot(args: Array[String], bootConfig: Config)
   def parseConfig(config: Config): ActorSpec = {
     val name = config.getString("name")
     val enabled = config.booleanWithDefault("enabled", true)
-    val actorConfig = config.configOption("config")
+    val actorConfig = config.configOption("config").getOrElse(ConfigFactory.empty)
     val configAsParam = config.booleanWithDefault("config-as-parameter", false)
     val configAsMessage = config.booleanWithDefault("config-as-message", false)
 
@@ -188,15 +194,17 @@ class Boot(args: Array[String], bootConfig: Config)
     private def gen[A <: Actor](clazz: Class[A]): ActorGenerator = {
       case (factory, actorOptions) =>
         Try {
-          val props = (actorOptions.configAsParam, actorOptions.configuration) match {
-            case (false, _)           => Props(clazz)
-            case (true, Some(config)) => Props(clazz, config)
-            
-            case (true, None) =>
-              log.warning("no actor configuration for {} when config-as-param is true", actorOptions.name)
-              log.warning("+- providing empty configuration")
-              Props(clazz, ConfigFactory.empty)
-          }
+          val props =
+            if (actorOptions.configAsParam) {
+              if (actorOptions.configuration.isEmpty) {
+                log.warning("no actor configuration for {} when config-as-param is true",
+                    actorOptions.name)
+                log.warning("+- providing empty configuration")
+              }
+              Props(clazz, actorOptions.configuration)
+            }
+            else Props(clazz)
+
           factory.actorOf(props, name = actorOptions.name)
         }
     }
@@ -217,27 +225,49 @@ class Boot(args: Array[String], bootConfig: Config)
         else if (uri.getSchemeSpecificPart eq null) None
         else {
           val Array(fqcn, methodName) = uri.getSchemeSpecificPart.split('/')
-          reflector.getClassFor[AnyRef](fqcn) match {
-            case Success(clazz) =>
-              Try(clazz.getMethod(methodName, classOf[ActorRefFactory], classOf[ActorOptions])) match {
-                case Success(method) =>
-                  val instance: AnyRef = reflector.getObjectFor[AnyRef](fqcn) match {
-                    case Success(scalaObject) => scalaObject
-                    case Failure(err) =>
-                      log.warning("method [{}.{}] will be invoked statically for URI [{}]",
-                        fqcn, methodName, uri)
-                      null
-                  }
-                  Success(gen(instance, method))
+          reflector.getObjectFor[AnyRef](fqcn) match {
+            case Success(scalaObject) =>
+              Try(scalaObject.getClass.getMethod(methodName)) map {
+                _.invoke(scalaObject)
+              } match {
+                case Success(f: Function2[_, _, _]) =>
+                  Success(f.asInstanceOf[ActorGenerator])
+
+                case Success(unexpected) =>
+                  val err = new IllegalStateException(s"expected a Function2 but got a ${unexpected.getClass.getName}")
+                  log.error(err.getMessage)
+                  Failure(err)
 
                 case Failure(err) =>
-                  log.error(err, "couldn't find method [{}] for URI [{}]", methodName, uri)
+                  log.error(err, "couldn't find Scala object method [{}] for URI [{}]", methodName, uri)
                   Failure(err)
               }
 
             case Failure(err) =>
-              log.error(err, "couldn't load factory class [{}] for URI [{}]", fqcn, uri)
-              Failure(err)
+              reflector.getClassFor[AnyRef](fqcn) match {
+                case Success(clazz) =>
+                  Try(clazz.getMethod(methodName, classOf[ActorRefFactory], classOf[ActorOptions])) match {
+                    case Success(method) =>
+                      val mods = method.getModifiers
+                      if (Modifier.isStatic(mods) && Modifier.isPublic(mods)) {
+                        Success(genStatic(method))
+                      }
+                      else {
+                        val err = new IllegalStateException(s"couldn't find Java public static method $methodName for URI [$uri]")
+                        log.error(err.getMessage)
+                        Failure(err)
+                      }
+
+                    case Failure(_) =>
+                      log.error("couldn't find method {} for URI [{}]; tried Scala Object and Java static",
+                          methodName, uri)
+                      Failure(err)
+                  }
+
+                case Failure(err) =>
+                  log.error(err, "couldn't load class {} for URI [{}]", fqcn, uri)
+                  Failure(err)
+              }
           }
         }.toOption
 
@@ -245,10 +275,10 @@ class Boot(args: Array[String], bootConfig: Config)
     }
 
 
-    private def gen(instance: AnyRef, method: Method): ActorGenerator = {
+    private def genStatic(method: Method): ActorGenerator = {
       case (factory, actorOptions) =>
         Try(
-          method.invoke(instance, Array(factory, actorOptions)).asInstanceOf[ActorRef]
+          method.invoke(null, factory, actorOptions).asInstanceOf[ActorRef]
         )
     }
   }
@@ -271,7 +301,7 @@ object Boot {
   final case class ActorOptions(
       name: String,
       generator: ActorGenerator,
-      configuration: Option[Config],
+      configuration: Config,
       configAsParam: Boolean,
       configAsMessage: Boolean,
       enabled: Boolean) extends ActorSpec
