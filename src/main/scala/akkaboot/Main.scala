@@ -30,14 +30,14 @@ import com.typesafe.config.ConfigFactory
 object Main extends App with ConfigHelp {
   val config = ConfigFactory.load
 
-  if (!config.hasPath("boot") || config.getConfig("boot").isEmpty) {
-    Console.err.println("The required configuration object 'boot' is missing or empty.\n")
+  if (!config.hasPath("akka-boot") || config.getConfig("akka-boot").isEmpty) {
+    Console.err.println("The required configuration object 'akka-boot' is missing or empty.\n")
     Console.err.println("This provides the boot options: 'name' and 'actors', which")
     Console.err.println("are the actor system name and the list of actors to start.")
     sys.exit(1)
   }
   else {
-    val bootConfig = config.getConfig("boot")
+    val bootConfig = config.getConfig("akka-boot")
 
     if (!bootConfig.hasPath("name")) {
       Console.err.println("The required configuration string 'boot.name' is missing.")
@@ -59,7 +59,7 @@ object Main extends App with ConfigHelp {
         }
       }
 
-      system.actorOf(Boot.props(args, bootConfig), "BOOT")
+      system.actorOf(Boot.props(args, bootConfig), "akka-boot")
     }
   }
 }

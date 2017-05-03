@@ -9,7 +9,7 @@ Scala object factory and Java static factory method implementations are supporte
 
 ### Configuration
 
-To use akka-boot, supply an additional top-level configuration object named `boot`
+To use akka-boot, supply an additional top-level configuration object named `akka-boot`
 with the following values:
 
 > **name** _(required)_                - The name of the actor system.
@@ -23,7 +23,9 @@ with the following values:
 >                                        the JVM when the actor system terminates.
 >                                        _(default **true**)_
 
-The `boot` configuration will not be provided to the actor system.
+The `akka-boot` configuration will not be provided to the actor system.
+After the top-level actors are started, the Boot actor will stop itself,
+leaving only your running actors and optionally a VM exit termination hook.
 
 
 #### Actor Configuration
@@ -35,8 +37,10 @@ Each actor configuration is a configuration object with the following values:
 >
 > **generator** _(required)_         - A URI indicating how to construct the actor,
 >                                      with these supported formats:
->   * `class:FQCN`
->   * `factory:FQCN/method`
+>
+>   * `class:FQCN`          (reflective actor class creation)
+>
+>   * `factory:FQCN/method` (Scala object or Java static factory creation)
 >
 > **enabled** _(optional)_           - A Boolean indicating whether or not this actor
 >                                      should be started. _(default **true**)_
