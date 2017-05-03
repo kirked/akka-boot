@@ -225,8 +225,8 @@ class Boot(args: Array[String], bootConfig: Config)
         else {
           val Array(fqcn, methodName) = uri.getSchemeSpecificPart.split('/')
           reflector.getObjectFor[AnyRef](fqcn) match {
-            case Success(scalaObject) => scalaGenerator(scalaObject, fqcn, methodName, uri)
-            case Failure(err)         => javaGenerator(fqcn, methodName, uri)
+            case Success(scalaObject) => scalaFactory(scalaObject, fqcn, methodName, uri)
+            case Failure(err)         => javaFactory(fqcn, methodName, uri)
           }
         }.toOption
 
@@ -234,7 +234,7 @@ class Boot(args: Array[String], bootConfig: Config)
     }
 
 
-    private def scalaGenerator(scalaObject: AnyRef, fqcn: String, methodName: String, uri: URI): Try[ActorGenerator] = {
+    private def scalaFactory(scalaObject: AnyRef, fqcn: String, methodName: String, uri: URI): Try[ActorGenerator] = {
       Try(scalaObject.getClass.getMethod(methodName)) map {
         _.invoke(scalaObject)
       } match {
@@ -253,14 +253,14 @@ class Boot(args: Array[String], bootConfig: Config)
     }
 
 
-    private def javaGenerator(fqcn: String, methodName: String, uri: URI): Try[ActorGenerator] = {
+    private def javaFactory(fqcn: String, methodName: String, uri: URI): Try[ActorGenerator] = {
       reflector.getClassFor[AnyRef](fqcn) match {
         case Success(clazz) =>
           Try(clazz.getMethod(methodName, classOf[ActorRefFactory], classOf[ActorOptions])) match {
             case Success(method) =>
               val mods = method.getModifiers
               if (Modifier.isStatic(mods) && Modifier.isPublic(mods)) {
-                Success(genStatic(method))
+                Success(staticGenerator(method))
               }
               else {
                 val err = new IllegalStateException(s"couldn't find Java public static method $methodName for URI [$uri]")
@@ -281,7 +281,7 @@ class Boot(args: Array[String], bootConfig: Config)
     }
 
 
-    private def genStatic(method: Method): ActorGenerator = {
+    private def staticGenerator(method: Method): ActorGenerator = {
       case (factory, actorOptions) =>
         Try(
           method.invoke(null, factory, actorOptions).asInstanceOf[ActorRef]
