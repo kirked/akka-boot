@@ -107,11 +107,12 @@ or the special string `"*"`, meaning all throwables.
 If a list of strings, each must be a FQCN of a `Throwable` subclass.
 
 An example:
-> decider = {
->   resume: "java.lang.ArithmeticException"
->   restart: ["java.lang.IllegalArgumentException", "java.lang.IllegalStateException"]
->   stop: "*"
-> }
+
+    decider = {
+      resume: "java.lang.ArithmeticException"
+      restart: ["java.lang.IllegalArgumentException", "java.lang.IllegalStateException"]
+      stop: "*"
+    }
 
 This will resume on ArithmeticException, restart on IllegalArgument or IllegalState,
 and stop on any other type of throwable.
@@ -119,7 +120,7 @@ and stop on any other type of throwable.
 It works because the actions are always tested against the actual throwable
 in the following order:
 
-    resume, restart, escalate, stop
+> resume, restart, escalate, stop
 
 Without a decider, or if no rule matches an actual throwable, `escalate` will
 be used to send it up to the `/user` supervisor.
