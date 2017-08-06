@@ -3,7 +3,7 @@ name := "akka-boot"
 
 organization := "com.github.kirked"
 
-version := "0.9.0"
+version := "0.9.1"
 
 val license = "MIT"
 
