@@ -13,7 +13,7 @@ class PlainActor extends Actor with ActorLogging {
 
 object PlainActor {
   def create(): ActorGenerator = {
-    case (factory, actorOptions) => Try(factory.actorOf(Props[PlainActor]))
+    case (factory, actorOptions) => Try(Some(factory.actorOf(Props[PlainActor])))
   }
 }
 
@@ -26,7 +26,7 @@ class ByParam(config: Config) extends Actor with ActorLogging {
 object ByParam {
   def create(): ActorGenerator = {
     case (factory, actorOptions) =>
-      Try(factory.actorOf(Props(classOf[ByParam], actorOptions.configuration)))
+      Try(Some(factory.actorOf(Props(classOf[ByParam], actorOptions.configuration))))
   }
 }
 
@@ -42,7 +42,7 @@ class ByMessage extends Actor with ActorLogging {
 object ByMessage {
   def create(): ActorGenerator = {
     case (factory, actorOptions) =>
-      Try(factory.actorOf(Props[ByMessage]))
+      Try(Some(factory.actorOf(Props[ByMessage])))
   }
 }
 
@@ -55,7 +55,7 @@ class EmptyParamConfig(config: Config) extends Actor with ActorLogging with Conf
 object EmptyParamConfig {
   def create(): ActorGenerator = {
     case (factory, actorOptions) =>
-      Try(factory.actorOf(Props(classOf[EmptyParamConfig], actorOptions.configuration)))
+      Try(Some(factory.actorOf(Props(classOf[EmptyParamConfig], actorOptions.configuration))))
   }
 }
 
@@ -72,6 +72,6 @@ class EmptyMessageConfig extends Actor with ActorLogging with ConfigHelp {
 object EmptyMessageConfig {
   def create(): ActorGenerator = {
     case (factory, actorOptions) =>
-      Try(factory.actorOf(Props[EmptyMessageConfig]))
+      Try(Some(factory.actorOf(Props[EmptyMessageConfig])))
   }
 }

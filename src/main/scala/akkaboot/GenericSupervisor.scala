@@ -1,3 +1,27 @@
+/*-----------------------------------------------------------------------------
+ * MIT License
+ * 
+ * Copyright (c) 2017 Doug Kirk
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *---------------------------------------------------------------------------*/
+
 package akkaboot
 
 import akka.actor.{Actor,
@@ -43,13 +67,17 @@ class GenericSupervisor(config: Config)
       }
     }
 
+    log.info("supervisor {} starting with maxRetries={}, timeRange={}, logging={}",
+        config.getString("name"), maxNrOfRetries, withinTimeRange, loggingEnabled)
+
 
   def receive = {
-    case props: Props =>
-      sender ! context.actorOf(props)
-
     case (props: Props, actorOptions: Boot.ActorOptions) =>
+      log.info("{} starting", actorOptions.name)
       sender ! (context.actorOf(props, name = actorOptions.name), actorOptions)
+
+    case msg =>
+      log.error("received unexpected message {}", msg)
   }
 
 

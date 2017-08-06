@@ -68,7 +68,7 @@ class Boot(args: Array[String], bootConfig: Config)
 
   def receive = {
     case ActorOptions(name, _, _, _, _, false) =>
-      log.debug("{} skipped (disabled)", name)
+      log.info("{} skipped (disabled)", name)
       skipped = skipped + 1
       checkDone
 
@@ -76,8 +76,7 @@ class Boot(args: Array[String], bootConfig: Config)
       if (aborted) skipped = skipped + 1
       else {
         log.info("{} starting", name)
-        startActor(options)
-        started = started + 1
+        if (startActor(options)) started = started + 1
       }
       checkDone
     
@@ -96,6 +95,8 @@ class Boot(args: Array[String], bootConfig: Config)
     case (supervisedActor: ActorRef, actorOptions: ActorOptions) =>
       log.debug("{} started", actorOptions.name)
       sendConfigAsMessage(supervisedActor, actorOptions)
+      started = started + 1
+      checkDone
   }
 
 
@@ -108,19 +109,21 @@ class Boot(args: Array[String], bootConfig: Config)
   }
 
 
-  def startActor(actorOptions: ActorOptions): Unit = {
+  def startActor(actorOptions: ActorOptions): Boolean = {
     actorOptions.generator(context.system, actorOptions) match {
       case Success(Some(actor)) =>
         log.debug("{} started", actorOptions.name)
         sendConfigAsMessage(actor, actorOptions)
+        true
 
       case Success(None) =>
         // the case for supervised actors
-        ()
+        false
 
       case Failure(err) =>
         log.error(err, "startup of {} failed", actorOptions.name)
         if (abortOnFailure) abort
+        false
     }
   }
 
@@ -323,6 +326,7 @@ class Boot(args: Array[String], bootConfig: Config)
   }
 
 
+  /** Parse a supervised actor specification: "supervisor:name/fqcn" */
   final object SupervisorGenerator {
     def unapply(uri: URI): Option[ActorGenerator] = uri.getScheme match {
       case "supervisor" =>
@@ -356,7 +360,7 @@ class Boot(args: Array[String], bootConfig: Config)
         val props = ClassGenerator.propsForClass(clazz, actorOptions)
         supervisors get supervisor match {
           case Some(supervisorActor) =>
-            supervisorActor ! (props, actorOptions.name)
+            supervisorActor ! (props, actorOptions)
             Success(None)
 
           case None =>
