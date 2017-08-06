@@ -50,9 +50,16 @@ class Boot(args: Array[String], bootConfig: Config)
     val reflector = context.system.asInstanceOf[ExtendedActorSystem].dynamicAccess
     val abortOnFailure = bootConfig.booleanWithDefault("abort-on-failure", true)
     val actors: List[Config] = bootConfig.configList("actors")
-    log.info("{} root actors configured", actors.size)
 
-    for (config <- actors) self ! parseConfig(config)
+    val supervisors: Map[String, ActorRef] = {
+      val supervisorConfigs = bootConfig.configList("supervisors")
+      log.info("{} supervisors configured", supervisorConfigs.size)
+      supervisorConfigs.map(createSupervisor).toMap
+    }
+
+    log.info("{} actors configured", actors.size)
+
+    for (config <- actors) self ! parseActorConfig(config)
 
     var started = 0
     var skipped = 0
@@ -85,6 +92,10 @@ class Boot(args: Array[String], bootConfig: Config)
       skipped = skipped + 1
       if (abortOnFailure) abort
       else checkDone
+
+    case (supervisedActor: ActorRef, actorOptions: ActorOptions) =>
+      log.debug("{} started", actorOptions.name)
+      sendConfigAsMessage(supervisedActor, actorOptions)
   }
 
 
@@ -99,19 +110,28 @@ class Boot(args: Array[String], bootConfig: Config)
 
   def startActor(actorOptions: ActorOptions): Unit = {
     actorOptions.generator(context.system, actorOptions) match {
-      case Success(actor) =>
+      case Success(Some(actor)) =>
         log.debug("{} started", actorOptions.name)
-        if (actorOptions.configAsMessage) {
-          if (actorOptions.configuration.isEmpty) {
-            log.warning("empty actor configuration for {} when config-as-message is true", actorOptions.name)
-            log.warning("+- sending empty configuration to {}", actor)
-          }
-          actor ! actorOptions.configuration
-        }
+        sendConfigAsMessage(actor, actorOptions)
+
+      case Success(None) =>
+        // the case for supervised actors
+        ()
 
       case Failure(err) =>
         log.error(err, "startup of {} failed", actorOptions.name)
         if (abortOnFailure) abort
+    }
+  }
+
+
+  def sendConfigAsMessage(actor: ActorRef, actorOptions: ActorOptions): Unit = {
+    if (actorOptions.configAsMessage) {
+      if (actorOptions.configuration.isEmpty) {
+        log.warning("empty actor configuration for {} when config-as-message is true", actorOptions.name)
+        log.warning("+- sending empty configuration to {}", actor)
+      }
+      actor ! actorOptions.configuration
     }
   }
 
@@ -141,8 +161,15 @@ class Boot(args: Array[String], bootConfig: Config)
   }
 
 
+  def createSupervisor(config: Config): (String, ActorRef) = {
+    val name = config.getString("name")
+    val actor = context.system.actorOf(GenericSupervisor.props(config), name = name)
+    (name, actor)
+  }
+
+
   /** Parse an actor specification from a configuration. */
-  def parseConfig(config: Config): ActorSpec = {
+  def parseActorConfig(config: Config): ActorSpec = {
     val name = config.getString("name")
     val enabled = config.booleanWithDefault("enabled", true)
     val actorConfig = config.configOption("config").getOrElse(ConfigFactory.empty)
@@ -161,8 +188,9 @@ class Boot(args: Array[String], bootConfig: Config)
 
   /** Parse an actor generator URI. */
   def parseGenerator(uri: URI): Try[ActorGenerator] = uri match {
-    case ClassGenerator(generator)    => Success(generator)
-    case FactoryGenerator(generator)  => Success(generator)
+    case ClassGenerator(generator)      => Success(generator)
+    case FactoryGenerator(generator)    => Success(generator)
+    case SupervisorGenerator(generator) => Success(generator)
     case _ => Failure(new IllegalArgumentException(s"invalid actor generator URI: [$uri]"))
   }
 
@@ -190,21 +218,26 @@ class Boot(args: Array[String], bootConfig: Config)
     }
 
 
+    def propsForClass[A <: Actor](clazz: Class[A], actorOptions: ActorOptions): Props = {
+      if (actorOptions.configAsParam) {
+        if (actorOptions.configuration.isEmpty) {
+          log.warning("no actor configuration for {} when config-as-param is true",
+              actorOptions.name)
+          log.warning("+- providing empty configuration")
+        }
+        Props(clazz, actorOptions.configuration)
+      }
+      else Props(clazz)
+    }
+
+
     private def gen[A <: Actor](clazz: Class[A]): ActorGenerator = {
       case (factory, actorOptions) =>
         Try {
-          val props =
-            if (actorOptions.configAsParam) {
-              if (actorOptions.configuration.isEmpty) {
-                log.warning("no actor configuration for {} when config-as-param is true",
-                    actorOptions.name)
-                log.warning("+- providing empty configuration")
-              }
-              Props(clazz, actorOptions.configuration)
-            }
-            else Props(clazz)
-
-          factory.actorOf(props, name = actorOptions.name)
+          val props = propsForClass(clazz, actorOptions)
+          val actor = factory.actorOf(props, name = actorOptions.name)
+          log.info("created actor {}", actorOptions.name)
+          Some(actor)
         }
     }
   }
@@ -284,8 +317,51 @@ class Boot(args: Array[String], bootConfig: Config)
     private def staticGenerator(method: Method): ActorGenerator = {
       case (factory, actorOptions) =>
         Try(
-          method.invoke(null, factory, actorOptions).asInstanceOf[ActorRef]
+          Some(method.invoke(null, factory, actorOptions).asInstanceOf[ActorRef])
         )
+    }
+  }
+
+
+  final object SupervisorGenerator {
+    def unapply(uri: URI): Option[ActorGenerator] = uri.getScheme match {
+      case "supervisor" =>
+        if (uri.getAuthority ne null) None
+        else if (uri.getPath ne null) None
+        else if (uri.getFragment ne null) None
+        else if (uri.getQuery ne null) None
+        else if (uri.getSchemeSpecificPart eq null) None
+        else {
+          val Array(supervisor, fqcn) = uri.getSchemeSpecificPart.split("/")
+          reflector.getClassFor[Actor](fqcn) match {
+            case Success(clazz) if (supervisors contains supervisor) =>
+              Success(gen(supervisor, clazz))
+
+            case Success(clazz) =>
+              log.error(s"no supervisor named [$supervisor] for URI [$uri]")
+              Failure(new IllegalArgumentException)
+
+            case Failure(err) =>
+              log.error(err, "can't load actor class [{}] for URI [{}]", fqcn, uri)
+              Failure(err)
+          }
+        }.toOption
+
+      case _ => None
+    }
+
+
+    private def gen[A <: Actor](supervisor: String, clazz: Class[A]): ActorGenerator = {
+      case (_factory, actorOptions) =>
+        val props = ClassGenerator.propsForClass(clazz, actorOptions)
+        supervisors get supervisor match {
+          case Some(supervisorActor) =>
+            supervisorActor ! (props, actorOptions.name)
+            Success(None)
+
+          case None =>
+            Failure(new IllegalStateException(s"no supervisor named [$supervisor] for actor named [${actorOptions.name}]"))
+        }
     }
   }
 }
@@ -295,7 +371,7 @@ object Boot {
   def props(args: Array[String], config: Config) = Props(new Boot(args, config))
 
 
-  type ActorGenerator = (ActorRefFactory, ActorOptions) => Try[ActorRef]
+  type ActorGenerator = (ActorRefFactory, ActorOptions) => Try[Option[ActorRef]]
 
   sealed trait ActorSpec
 

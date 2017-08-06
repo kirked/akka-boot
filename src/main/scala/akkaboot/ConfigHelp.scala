@@ -25,6 +25,8 @@
 package akkaboot
 
 import com.typesafe.config.Config
+import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.util.Try
 
 trait ConfigHelp {
   implicit class ConfigHelper(config: Config) {
@@ -33,10 +35,32 @@ trait ConfigHelp {
     def booleanWithDefault(path: String, defaultValue: Boolean): Boolean =
         if (config.hasPath(path)) config.getBoolean(path) else defaultValue
 
+    def intOption(path: String): Option[Int] =
+        if (config.hasPath(path)) Some(config.getInt(path)) else None
+
+    def stringWithDefault(path: String, defaultValue: String): String =
+        if (config.hasPath(path)) config.getString(path) else defaultValue
+
+    def stringOption(path: String): Option[String] =
+        if (config.hasPath(path)) Some(config.getString(path)) else None
+
+    def stringList(path: String): List[String] =
+        if (config.hasPath(path)) config.getStringList(path).asScala.toList else List.empty
+
     def configOption(path: String): Option[Config] =
         if (config.hasPath(path)) Some(config.getConfig(path)) else None
         
     def configList(path: String): List[Config] =
         if (config.hasPath(path)) config.getConfigList(path).asScala.toList else List.empty
+
+    def durationOption(path: String): Option[FiniteDuration] = {
+      if (config.hasPath(path)) {
+        Try {
+          val duration = Duration(config.getString(path))
+          FiniteDuration(duration.length, duration.unit)
+        }.toOption
+      }
+      else None
+    }
   }
 }
